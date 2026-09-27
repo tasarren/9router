@@ -180,6 +180,7 @@ const MODEL_TYPE_TO_KIND = {
   stt: "stt",
   imageToText: "imageToText",
   video: "video",
+  rerank: "rerank",
 };
 
 function modelKind(model) {
@@ -404,7 +405,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
-        if (!kindFilter.includes(modelKind(model))) continue;
+        if (!kindFilter.includes(modelKind(model)) && !(kindFilter.includes("imageToText") && modelKind(model) === LLM_KIND && getCapabilitiesForModel(providerId, model.id).vision)) continue;
         if (isDisabled(alias, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
@@ -559,7 +560,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         const kind = customKind || liveKind || staticModelKindById.get(modelId) || inferKindFromUnknownModelId(modelId);
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
-        if (!kindFilter.includes(kind) && !allowAsLlm) continue;
+        const allowAsVision = kind === LLM_KIND && kindFilter.includes("imageToText") && getCapabilitiesForModel(providerId, modelId).vision;
+        if (!kindFilter.includes(kind) && !allowAsLlm && !allowAsVision) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
 
         const model = {
