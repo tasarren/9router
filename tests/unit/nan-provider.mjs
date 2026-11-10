@@ -64,6 +64,18 @@ for (const invalid of [
   assert.equal(result.quotas, undefined);
   assert.match(result.message, /unavailable/i);
 }
+// Shape captured from cloud.nan.builders /api/usage/credits (2026-11-10), trimmed.
+const creditsReport = {
+  enabled: true, tier: "inference", periodStart: "2026-11-01T15:06:22Z", periodEnd: "2026-12-01T15:06:22Z",
+  allowanceCredits: 7000, usedCredits: 20.9, remainingCredits: 6979.1, packCredits: 0,
+  models: [{ model: "deepseek-v4-flash", creditsThisMonth: 20.9, tokensThisMonth: 20572549 }],
+};
+assert.deepEqual(formatNanUsage(creditsReport).quotas, {
+  credits: { used: 20.9, total: 7000, resetAt: "2026-12-01T15:06:22Z", unit: "credits" },
+});
+assert.match(formatNanUsage({ ...creditsReport, allowanceCredits: 0 }).message, /unavailable/i);
+assert.equal(nan.transport.usage.creditsUrl, "https://cloud-api.nan.builders/api/usage/credits");
+
 const nanExec = new DefaultExecutor("nan");
 const msgs = [{ role: "user", content: "hi" }];
 assert.deepEqual(nanExec.transformRequest("gemma4", { messages: msgs, stream: true }, true, {}).stream_options, { include_usage: true });
