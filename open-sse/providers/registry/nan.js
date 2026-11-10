@@ -13,8 +13,8 @@ export default {
   transport: {
     baseUrl: "https://api.nan.builders/v1/chat/completions",
     usage: {
-      // Dashboard quota counters; /v1/usage can return an empty history for an active key.
-      url: "https://cloud-api.nan.builders/api/usage/quota",
+      // Legacy /api/usage/quota stopped updating after the switch to credits (2026-11).
+      url: "https://api.nan.builders/v1/usage",
       creditsUrl: "https://cloud-api.nan.builders/api/usage/credits",
     },
     // NaN only emits a usage chunk when the client asks for it; without it streams are estimated.

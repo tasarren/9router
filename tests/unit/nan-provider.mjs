@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import REGISTRY from "../../open-sse/providers/registry/index.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { parseUpstreamError } from "../../open-sse/utils/error.js";
-import { formatNanUsage } from "../../open-sse/services/usage/nan.js";
+import { formatNanCredits, formatNanTokenUsage } from "../../open-sse/services/usage/nan.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 assert.equal(new Set(REGISTRY.map((item) => item.id)).size, REGISTRY.length, "provider IDs must be unique");
@@ -24,56 +24,38 @@ const retry = await parseUpstreamError(new Response('{"error":{"message":"slow d
   status: 429, headers: { "retry-after": "60" },
 }));
 assert(retry.resetsAtMs > Date.now() + 59000 && retry.resetsAtMs < Date.now() + 61000);
-const report = {
-  periodStart: "2026-10-01",
-  models: [
-    { model: "deepseek-v4-flash", tokensUsed: 1500000000, cap: 3000000000, periodEnd: "2026-11-01T00:00:00Z" },
-    { model: "glm5.3-flash", tokensUsed: 650000000, cap: 2000000000, periodEnd: "2026-11-01T00:00:00Z" },
-    { model: "glm5.3", tokensUsed: 500000000, cap: 1500000000, fullCap: 3000000000, periodEnd: "2026-11-09T15:06:22Z" },
-  ],
-};
-const usage = formatNanUsage(report);
-assert.equal(usage.plan, "NaN");
-assert.deepEqual(Object.keys(usage.quotas), report.models.map((row) => row.model));
-for (const row of report.models) {
-  assert.deepEqual(usage.quotas[row.model], {
-    used: row.tokensUsed, total: row.cap, resetAt: row.periodEnd, unit: "tokens",
-  });
-}
-assert.equal(usage.summary, undefined);
-assert.equal(nan.transport.usage.url, "https://cloud-api.nan.builders/api/usage/quota");
-assert.equal(nan.transport.usage.monthlyTokenCaps, undefined);
-
-for (const used of [0, 100, 101]) {
-  const result = formatNanUsage({ models: [{ model: "new-model", tokensUsed: used, cap: 100 }] });
-  assert.deepEqual(result.quotas["new-model"], { used, total: 100, resetAt: null, unit: "tokens" });
-}
-for (const invalid of [
-  null, {}, { models: [] }, { models: {} }, { models: [null] },
-  { totals: { total_tokens: 0, api_requests: 0, by_model: [] }, all_time: { total_tokens: 0 } },
-  ...[
-    { model: "" }, { model: " " }, { model: 1 },
-    { tokensUsed: undefined }, { tokensUsed: null }, { tokensUsed: -1 }, { tokensUsed: "0" },
-    { tokensUsed: 0.5 }, { tokensUsed: Infinity }, { tokensUsed: Number.MAX_SAFE_INTEGER + 1 },
-    { cap: undefined }, { cap: null }, { cap: 0 }, { cap: -1 }, { cap: "100" },
-    { cap: 0.5 }, { cap: Infinity }, { periodEnd: "invalid-date" }, { periodEnd: 123 },
-  ].map((overrides) => ({ models: [report.models[0], { ...report.models[1], ...overrides }] })),
-  { models: [report.models[0], report.models[0]] },
-]) {
-  const result = formatNanUsage(invalid);
-  assert.equal(result.quotas, undefined);
-  assert.match(result.message, /unavailable/i);
-}
 // Shape captured from cloud.nan.builders /api/usage/credits (2026-11-10), trimmed.
 const creditsReport = {
   enabled: true, tier: "inference", periodStart: "2026-11-01T15:06:22Z", periodEnd: "2026-12-01T15:06:22Z",
   allowanceCredits: 7000, usedCredits: 20.9, remainingCredits: 6979.1, packCredits: 0,
-  models: [{ model: "deepseek-v4-flash", creditsThisMonth: 20.9, tokensThisMonth: 20572549 }],
+  models: [
+    { model: "deepseek-v4-flash", creditsThisMonth: 20.9, tokensThisMonth: 20572549 },
+    { model: "kimi-k3.1-pro", creditsThisMonth: 0, tokensThisMonth: 24 },
+    { model: "broken" },
+  ],
 };
-assert.deepEqual(formatNanUsage(creditsReport).quotas, {
-  credits: { used: 20.9, total: 7000, resetAt: "2026-12-01T15:06:22Z", unit: "credits" },
+const resetAt = "2026-12-01T15:06:22Z";
+assert.deepEqual(formatNanCredits(creditsReport).quotas, {
+  credits: { used: 20.9, total: 7000, resetAt, unit: "credits" },
+  "deepseek-v4-flash": { used: 20.9, total: 7000, resetAt, unit: "credits" },
+  "kimi-k3.1-pro": { used: 0, total: 7000, resetAt, unit: "credits" },
 });
-assert.match(formatNanUsage({ ...creditsReport, allowanceCredits: 0 }).message, /unavailable/i);
+for (const bad of [null, {}, { ...creditsReport, enabled: false }, { ...creditsReport, allowanceCredits: 0 }, { ...creditsReport, usedCredits: "1" }]) {
+  assert.match(formatNanCredits(bad).message, /unavailable/i);
+}
+
+// Shape of public /v1/usage (2026-11-10), trimmed.
+const tokenReport = { totals: { by_model: [
+  { model: "deepseek-v4-flash", total_tokens: 1114030742, api_requests: 6382 },
+  { model: "kimi-k3.1-pro", total_tokens: 24, api_requests: 1 },
+  { model: "", total_tokens: 1 },
+] } };
+assert.deepEqual({ ...formatNanTokenUsage(tokenReport, resetAt).quotas }, {
+  "deepseek-v4-flash": { used: 1114030742, total: 0, resetAt, unit: "tokens", limitUnknown: true, apiRequests: 6382 },
+  "kimi-k3.1-pro": { used: 24, total: 0, resetAt, unit: "tokens", limitUnknown: true, apiRequests: 1 },
+});
+assert.match(formatNanTokenUsage({}, resetAt).message, /unavailable/i);
+assert.equal(nan.transport.usage.url, "https://api.nan.builders/v1/usage");
 assert.equal(nan.transport.usage.creditsUrl, "https://cloud-api.nan.builders/api/usage/credits");
 
 const nanExec = new DefaultExecutor("nan");
