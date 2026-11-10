@@ -1,6 +1,9 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
+// 872000 -> "872K", 1000000 -> "1M", 1048576 -> "1.05M"
+const formatTokens = (n) => n >= 1e6 ? `${+(n / 1e6).toFixed(2)}M` : `${Math.round(n / 1000)}K`;
+
 export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const borderColor = testStatus === "ok"
@@ -29,6 +32,14 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
             {model.name && <span className="break-all sm:truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+            {caps?.contextWindow > 0 && (
+              <span
+                className="shrink-0 whitespace-nowrap text-text-muted/70"
+                title={`Context window: ${caps.contextWindow.toLocaleString()} tokens${caps.maxOutput > 0 ? ` · Max output: ${caps.maxOutput.toLocaleString()} tokens` : ""}`}
+              >
+                {formatTokens(caps.contextWindow)} ctx{caps.maxOutput > 0 && ` · ${formatTokens(caps.maxOutput)} out`}
+              </span>
+            )}
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
