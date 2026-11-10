@@ -75,18 +75,18 @@ export function invalidateCatalog() {
   cachedMtime = -1;
 }
 
-// Limits reported by a provider's own live model list (Codex context_window,
-// Anthropic max_input_tokens). They beat every other source, the hardcoded
-// table included. Same mtime cache as above: the dashboard route that writes
-// the file and the request path that reads it may hold separate module copies.
-export const LIVE_LIMITS_FILE = path.join(DATA_DIR, "live-model-limits.json");
+// Model lists fetched from each provider's own API (Codex /models, Anthropic
+// /v1/models), persisted so /v1/models and the limits survive restarts. Their
+// limits beat every other source, the hardcoded table included. Same mtime
+// cache as above: the writer and the request path may hold separate copies.
+export const LIVE_MODELS_FILE = path.join(DATA_DIR, "live-models.json");
 let live = {};
 let liveMtime = -1;
 
 function loadLive() {
   let mtime;
   try {
-    mtime = fs.statSync(LIVE_LIMITS_FILE).mtimeMs;
+    mtime = fs.statSync(LIVE_MODELS_FILE).mtimeMs;
   } catch {
     live = {};
     liveMtime = -1;
@@ -95,7 +95,7 @@ function loadLive() {
   if (mtime === liveMtime) return live;
   liveMtime = mtime;
   try {
-    live = JSON.parse(fs.readFileSync(LIVE_LIMITS_FILE, "utf8")) || {};
+    live = JSON.parse(fs.readFileSync(LIVE_MODELS_FILE, "utf8")) || {};
   } catch {
     live = {};
   }
@@ -104,33 +104,39 @@ function loadLive() {
 
 const ALIAS_TO_PROVIDER = Object.fromEntries(Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id]));
 
-export function getLiveLimits(provider, model) {
+// [{ id, name, upstreamModelId?, kind?, contextWindow?, maxOutput? }] or null.
+export function getLiveModels(provider) {
   const all = provider && loadLive();
-  const byProvider = all && (all[provider] || all[ALIAS_TO_PROVIDER[provider]]);
-  if (!byProvider || !model) return null;
-  return byProvider[model] || byProvider[model.split("/").pop()] || null;
+  return (all && (all[provider] || all[ALIAS_TO_PROVIDER[provider]])?.models) || null;
 }
 
-// Replace a provider's live limits with the ones in `models` ({ id, contextWindow, maxOutput }).
-// ponytail: refreshed only when the dashboard fetches the live list; add a
-// scheduled fetch when routing must see new limits without a dashboard visit.
-export function saveLiveLimits(provider, models) {
-  const limits = {};
-  for (const m of models || []) {
-    const entry = {};
-    if (m?.contextWindow > 0) entry.contextWindow = m.contextWindow;
-    if (m?.maxOutput > 0) entry.maxOutput = m.maxOutput;
-    if (m?.id && Object.keys(entry).length) limits[m.id] = entry;
-  }
-  if (!Object.keys(limits).length) return;
+export function getLiveLimits(provider, model) {
+  if (!model) return null;
+  const bare = model.split("/").pop();
+  const found = getLiveModels(provider)?.find((m) => m.id === model || m.id === bare);
+  if (!found || !(found.contextWindow > 0 || found.maxOutput > 0)) return null;
+  return { contextWindow: found.contextWindow, maxOutput: found.maxOutput };
+}
+
+// Replace a provider's stored list. An empty list (failed fetch) keeps the old one.
+export function saveLiveModels(provider, models) {
+  const kept = (models || []).filter((m) => m?.id).map((m) => ({
+    id: m.id,
+    name: m.name || m.id,
+    ...(m.upstreamModelId && { upstreamModelId: m.upstreamModelId }),
+    ...(m.kind && { kind: m.kind }),
+    ...(m.contextWindow > 0 && { contextWindow: m.contextWindow }),
+    ...(m.maxOutput > 0 && { maxOutput: m.maxOutput }),
+  }));
+  if (!kept.length) return;
   try {
-    const next = { ...loadLive(), [provider]: limits };
-    fs.mkdirSync(path.dirname(LIVE_LIMITS_FILE), { recursive: true });
-    fs.writeFileSync(`${LIVE_LIMITS_FILE}.tmp`, JSON.stringify(next), "utf8");
-    fs.renameSync(`${LIVE_LIMITS_FILE}.tmp`, LIVE_LIMITS_FILE);
+    const next = { ...loadLive(), [provider]: { fetchedAt: new Date().toISOString(), models: kept } };
+    fs.mkdirSync(path.dirname(LIVE_MODELS_FILE), { recursive: true });
+    fs.writeFileSync(`${LIVE_MODELS_FILE}.tmp`, JSON.stringify(next), "utf8");
+    fs.renameSync(`${LIVE_MODELS_FILE}.tmp`, LIVE_MODELS_FILE);
     liveMtime = -1;
   } catch (error) {
-    console.log("Failed to store live model limits:", error.message);
+    console.log("Failed to store live models:", error.message);
   }
 }
 

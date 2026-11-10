@@ -10,5 +10,9 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Fill live-models.json from each provider's own model API (fire and forget).
+    const { refreshLiveCatalogs } = await import("@/lib/liveModels");
+    refreshLiveCatalogs().catch((error) => console.log("[live-models] boot refresh failed:", error.message));
   }
 }

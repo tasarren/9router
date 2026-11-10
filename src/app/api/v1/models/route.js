@@ -21,6 +21,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { getLiveModels } from "open-sse/providers/catalogOverride.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -485,6 +486,13 @@ export async function buildModelsList(kindFilter, options = {}) {
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
+      // Lists persisted by the boot/dashboard catalog refresh (claude, codex).
+      const storedLive = !hasExplicitEnabledModels && getLiveModels(providerId);
+      if (storedLive?.length) {
+        rawModelIds = storedLive.map((m) => m.id);
+        liveModelKindById = new Map(storedLive.map((m) => [m.id, modelKind(m)]));
+      }
+
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {

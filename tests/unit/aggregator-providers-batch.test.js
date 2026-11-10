@@ -97,7 +97,7 @@ describe("provider icons", () => {
 describe("authenticated model discovery", () => {
   const ROUTE = join(
     dirname(fileURLToPath(import.meta.url)), "..", "..",
-    "src", "app", "api", "providers", "[id]", "models", "route.js"
+    "src", "lib", "liveModels.js"
   );
   const source = readFileSync(ROUTE, "utf8");
 

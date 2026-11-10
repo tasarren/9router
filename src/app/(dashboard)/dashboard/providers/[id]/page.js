@@ -84,6 +84,8 @@ export default function ProviderDetailPage() {
   const [liveModels, setLiveModels] = useState([]);
   // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
   const [liveModelsError, setLiveModelsError] = useState(null);
+  const [catalogRefresh, setCatalogRefresh] = useState(0);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -504,7 +506,9 @@ export default function ProviderDetailPage() {
 
     let cancelled = false;
     if (providerId === "zed") setLiveModelsError(null);
-    fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
+    // First load reads the stored list; the Refresh catalog button asks upstream.
+    setCatalogLoading(true);
+    fetch(`/api/providers/${connection.id}/models${catalogRefresh ? "" : "?cached=1"}`, { cache: "no-store" })
       .then(async (res) => ({ ok: res.ok, data: await res.json().catch(() => null) }))
       .then(({ ok, data }) => {
         if (cancelled) return;
@@ -523,10 +527,11 @@ export default function ProviderDetailPage() {
           setLiveModels([]);
           setLiveModelsError("Failed to reach the Zed model catalog.");
         }
-      });
+      })
+      .finally(() => { if (!cancelled) setCatalogLoading(false); });
 
     return () => { cancelled = true; };
-  }, [providerId, connections]);
+  }, [providerId, connections, catalogRefresh]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -1804,6 +1809,11 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
+                {LIVE_CATALOG_PROVIDERS.has(providerId) && connections.some((c) => c.isActive !== false) && (
+                  <Button size="sm" variant="secondary" icon="sync" disabled={catalogLoading} onClick={() => setCatalogRefresh((n) => n + 1)}>
+                    {catalogLoading ? "Refreshing…" : "Refresh catalog"}
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
