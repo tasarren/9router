@@ -1,8 +1,11 @@
 import { withCodexReviewModels } from "../models/helpers.js";
+import { setCliFallback } from "../../utils/cliVersion.js";
 
-// Codex CLI version seen by OpenAI's backend — single source for the Version /
-// User-Agent identity headers. Bump when the installed codex CLI is upgraded.
-const CODEX_CLI_VERSION = "0.159.0";
+// Floor Codex CLI version for the Version / User-Agent identity headers. The live
+// value comes from npm (utils/cliVersion.js); proxyAwareFetch rewrites outbound
+// codex_cli_rs/x.y.z and version headers.
+const CODEX_CLI_VERSION = "0.167.0";
+setCliFallback("codex", CODEX_CLI_VERSION);
 const GPT_6_LITE_THINKING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
 export default {

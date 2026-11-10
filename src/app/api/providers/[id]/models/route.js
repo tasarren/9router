@@ -14,12 +14,15 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
-import codexProvider from "open-sse/providers/registry/codex.js";
+import "open-sse/providers/registry/codex.js"; // registers the codex CLI version floor
+import { ensureCliVersion } from "open-sse/utils/cliVersion.js";
+import { saveLiveLimits } from "open-sse/providers/catalogOverride.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
-// Model discovery must identify as the same Codex CLI version as inference.
-const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
+// Model discovery must identify as the same Codex CLI version as inference
+// (client_version gates which models the list returns).
+const CODEX_MODELS_URL = "https://chatgpt.com/backend-api/codex/models";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -55,7 +58,7 @@ const appendCodexReviewModels = (models) => models.flatMap((model) => {
   const name = model?.display_name || model?.displayName || model?.name || id;
   const normalized = { ...model, id, name };
   const isChatModel = (model?.type || "llm") !== "image" && !id.toLowerCase().includes("embed");
-  if (!isChatModel || id.endsWith("-review")) return [normalized];
+  if (!isChatModel || id.endsWith("-review") || model.upstreamModelId) return [normalized];
   return [
     normalized,
     {
@@ -68,7 +71,37 @@ const appendCodexReviewModels = (models) => models.flatMap((model) => {
   ];
 });
 
-const parseCodexModels = (data) => appendCodexReviewModels(parseOpenAIStyleModels(data));
+// Codex lists the default window (context_window) and, for models that can
+// stretch, max_context_window. The stretched window is exposed as `<id>[1m]`,
+// routed to the same upstream id, like the static catalog does.
+const addCodexContextVariants = (models) => models.flatMap((model) => {
+  const id = model?.slug || model?.id;
+  if (!id) return [];
+  const base = { ...model, id, contextWindow: model.context_window };
+  if (!(model.max_context_window > model.context_window)) return [base];
+  const name = model.display_name || id;
+  return [base, {
+    ...base,
+    id: `${id}[1m]`,
+    display_name: `${name} (extended context)`,
+    upstreamModelId: id,
+    contextWindow: model.max_context_window,
+  }];
+});
+
+// The live list holds chat models only; image and transcription models stay static.
+const parseCodexModels = (data) => {
+  const chat = appendCodexReviewModels(addCodexContextVariants(parseOpenAIStyleModels(data)));
+  if (!chat.length) return chat;
+  return [...chat, ...getStaticProviderModels("codex").filter((m) => m.kind === "image" || m.kind === "stt")];
+};
+
+const parseClaudeModels = (data) => (data.data || []).map((m) => ({
+  id: m.id,
+  name: m.display_name || m.id,
+  contextWindow: m.max_input_tokens,
+  maxOutput: m.max_tokens,
+}));
 
 const createOpenAIModelsConfig = (url) => ({
   url,
@@ -200,7 +233,7 @@ const PROVIDER_MODELS_CONFIG = {
     },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
-    parseResponse: (data) => (data.data || []).map((m) => ({ id: m.id, name: m.display_name || m.id }))
+    parseResponse: parseClaudeModels
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
@@ -212,7 +245,7 @@ const PROVIDER_MODELS_CONFIG = {
   codex: {
     customResolver: buildOAuthResolver({
       refreshFn: (conn) => refreshCodexToken(conn.refreshToken),
-      fetchFn: (token) => fetch(CODEX_MODELS_URL, {
+      fetchFn: async (token) => fetch(`${CODEX_MODELS_URL}?client_version=${await ensureCliVersion("codex")}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -646,6 +679,7 @@ export async function GET(request, { params }) {
       if (result.error) {
         return NextResponse.json({ error: result.error }, { status: result.status || 500 });
       }
+      saveLiveLimits(connection.provider, result.models);
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
@@ -695,6 +729,7 @@ export async function GET(request, { params }) {
 
     const data = await response.json();
     const models = config.parseResponse(data);
+    saveLiveLimits(connection.provider, models);
 
     return NextResponse.json({
       provider: connection.provider,

@@ -749,7 +749,8 @@ let catalogSource = null;
 /**
  * Install the synced catalog reader (server only).
  * @param {{ getModalities: (provider: string, model: string) => object|null,
- *           getLimits: (provider: string, model: string) => object|null } | null} source
+ *           getLimits: (provider: string, model: string) => object|null,
+ *           getLiveLimits?: (provider: string, model: string) => object|null } | null} source
  */
 export function setCatalogSource(source) {
   catalogSource = source;
@@ -825,7 +826,17 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
+// Limits from the provider's own live model list win over every table below.
 export function getCapabilitiesForModel(provider, model) {
+  const caps = resolveCapabilities(provider, model);
+  const live = model && getCatalogSource()?.getLiveLimits?.(provider, model);
+  if (!live) return caps;
+  if (live.contextWindow > 0) caps.contextWindow = live.contextWindow;
+  if (live.maxOutput > 0) caps.maxOutput = live.maxOutput;
+  return caps;
+}
+
+function resolveCapabilities(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
