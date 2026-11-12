@@ -28,6 +28,7 @@ const ADAPTERS = {
   xai: createOpenAIAdapter("xai"),
   nan: createOpenAIAdapter("nan"),
   sensenova: createOpenAIAdapter("sensenova"),
+  "sensenova-intl": createOpenAIAdapter("sensenova-intl"),
   gemini,
   codex,
   sdwebui,
