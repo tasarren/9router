@@ -30,3 +30,30 @@ describe("cli version rewrite", () => {
     expect(out.other).toBe("0.1.0");
   });
 });
+
+describe("live endpoint formats", () => {
+  it("beat the registry for opencode-go and ignore the thinking suffix", async () => {
+    const { getModelSupportedFormats, getModelTargetFormat } = await import("../../open-sse/config/providerModels.js");
+    const live = { "kimi-k3": { supportedFormats: ["claude"], targetFormat: "claude" } };
+    setCatalogSource({ getModalities: () => null, getLimits: () => null, getLiveFormats: (p, m) => (p === "opencode-go" && live[m.replace(/\(.*\)$/, "")]) || null });
+    expect(getModelSupportedFormats("opencode-go", "kimi-k3(high)")).toEqual(["claude"]);
+    expect(getModelTargetFormat("opencode-go", "kimi-k3")).toBe("claude");
+    expect(getModelSupportedFormats("opencode-go", "glm-5.3")).toEqual(["openai"]);
+  });
+
+  it("parse OpenCode Go and NaN catalogs", async () => {
+    const { parseOpenCodeGoModels, parseNanModels } = await import("../../src/lib/liveModels.js");
+    const go = parseOpenCodeGoModels({ data: [
+      { id: "a", name: "A", api: { "chat-completions": {} }, limit: { context: 1000, output: 10 } },
+      { id: "b", api: { responses: {} } },
+      { id: "c", api: { "generate-content": {} } },
+    ] });
+    expect(go).toEqual([
+      { id: "a", name: "A", supportedFormats: ["openai"], contextWindow: 1000, maxOutput: 10 },
+      { id: "b", name: "b", supportedFormats: ["openai-responses"], targetFormat: "openai-responses", contextWindow: undefined, maxOutput: undefined },
+    ]);
+    const nan = parseNanModels({ data: [{ id: "qwen3-embedding" }, { id: "brand-new" }] });
+    expect(nan[0].kind).toBe("embedding");
+    expect(nan[1]).toEqual({ id: "brand-new", name: "brand-new" });
+  });
+});

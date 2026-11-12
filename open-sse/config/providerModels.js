@@ -4,6 +4,10 @@ import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
+
+// Formats from the persisted live catalog (installed by catalogOverride via setCatalogSource,
+// server only); beats the registry and the regex.
+const liveFormats = (aliasOrId, modelId) => globalThis.__9rCatalogSource?.getLiveFormats?.(aliasOrId, modelId) || null;
 export { PROVIDER_MODELS };
 
 // OpenCode providers sharing the endpoint-family fallback for unknown model ids
@@ -58,6 +62,8 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   if (isOpenCodeAlias(aliasOrId) && isMuseSparkModel(modelId)) {
     return FORMATS.OPENAI_RESPONSES;
   }
+  const live = liveFormats(aliasOrId, modelId);
+  if (live) return live.targetFormat;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);
@@ -72,6 +78,8 @@ export function getModelTargetFormat(aliasOrId, modelId) {
 // Unknown OpenCode ids fall back to the family regex (chat lane by default) so
 // auto-fetched models never wrongly use the sourceFormat-matched transport.
 export function getModelSupportedFormats(aliasOrId, modelId) {
+  const live = liveFormats(aliasOrId, modelId);
+  if (live) return live.supportedFormats;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);

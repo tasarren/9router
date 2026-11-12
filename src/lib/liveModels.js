@@ -103,6 +103,31 @@ const parseClaudeModels = (data) => (data.data || []).map((m) => ({
   maxOutput: m.max_tokens,
 }));
 
+// NaN /v1/models only returns ids; keep the registry kind (embedding, tts, ...) for known ones.
+const parseNanModels = (data) => {
+  const known = new Map(getModelsByProviderId("nan").map((m) => [m.id, m]));
+  return parseOpenAIStyleModels(data).map(({ id }) => ({
+    id,
+    name: known.get(id)?.name || id,
+    ...(known.get(id)?.kind && { kind: known.get(id).kind }),
+  }));
+};
+
+// OpenCode Go lists each model's endpoints under `api`; unsupported ones (generate-content) are dropped.
+const OPENCODE_API_FORMATS = { "chat-completions": "openai", messages: "claude", responses: "openai-responses" };
+const parseOpenCodeGoModels = (data) => parseOpenAIStyleModels(data).flatMap((m) => {
+  const supportedFormats = Object.keys(m.api || {}).map((k) => OPENCODE_API_FORMATS[k]).filter(Boolean);
+  if (!supportedFormats.length) return [];
+  return [{
+    id: m.id,
+    name: m.name || m.id,
+    supportedFormats,
+    ...(!supportedFormats.includes("openai") && { targetFormat: supportedFormats[0] }),
+    contextWindow: m.limit?.context,
+    maxOutput: m.limit?.output,
+  }];
+});
+
 const createOpenAIModelsConfig = (url) => ({
   url,
   method: "GET",
@@ -212,7 +237,8 @@ function buildQoderModelsResolver(providerId) {
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
-  nan: createOpenAIModelsConfig("https://api.nan.builders/v1/models"),
+  nan: { ...createOpenAIModelsConfig("https://api.nan.builders/v1/models"), parseResponse: parseNanModels },
+  "opencode-go": { ...createOpenAIModelsConfig("https://opencode.ai/inference/go/v1/models"), parseResponse: parseOpenCodeGoModels },
   "muse": {
     url: "https://api.meta.ai/v1/models",
     method: "GET",
@@ -597,6 +623,8 @@ const reply = (body, init) => ({ body, status: init?.status ?? 200 });
  * Fetch a connection's model list from its provider. Returns { status, body }.
  * Successful lists are persisted (live-models.json) for /v1/models and limits.
  */
+export { parseNanModels, parseOpenCodeGoModels }; // for tests
+
 export async function fetchConnectionModels(connection) {
   try {
 
@@ -752,7 +780,7 @@ export async function fetchConnectionModels(connection) {
 }
 
 // Providers whose persisted live list replaces the static one in /v1/models.
-export const PERSISTED_CATALOG_PROVIDERS = ["claude", "codex"];
+export const PERSISTED_CATALOG_PROVIDERS = ["claude", "codex", "nan", "opencode-go"];
 
 // Boot-time fill of live-models.json: first active connection per provider.
 // A failed fetch keeps the last stored list; "Refresh catalog" in the dashboard retries.

@@ -104,7 +104,7 @@ function loadLive() {
 
 const ALIAS_TO_PROVIDER = Object.fromEntries(Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id]));
 
-// [{ id, name, upstreamModelId?, kind?, contextWindow?, maxOutput? }] or null.
+// [{ id, name, upstreamModelId?, kind?, supportedFormats?, targetFormat?, contextWindow?, maxOutput? }] or null.
 export function getLiveModels(provider) {
   const all = provider && loadLive();
   return (all && (all[provider] || all[ALIAS_TO_PROVIDER[provider]])?.models) || null;
@@ -118,6 +118,15 @@ export function getLiveLimits(provider, model) {
   return { contextWindow: found.contextWindow, maxOutput: found.maxOutput };
 }
 
+// Endpoint formats the provider published for a model; "model(level)" suffix ignored.
+export function getLiveFormats(provider, model) {
+  if (!model) return null;
+  const bare = model.replace(/\([^()]+\)\s*$/, "").trim().split("/").pop();
+  const found = getLiveModels(provider)?.find((m) => m.id === bare);
+  if (!found?.supportedFormats?.length) return null;
+  return { supportedFormats: found.supportedFormats, targetFormat: found.targetFormat || null };
+}
+
 // Replace a provider's stored list. An empty list (failed fetch) keeps the old one.
 export function saveLiveModels(provider, models) {
   const kept = (models || []).filter((m) => m?.id).map((m) => ({
@@ -125,6 +134,8 @@ export function saveLiveModels(provider, models) {
     name: m.name || m.id,
     ...(m.upstreamModelId && { upstreamModelId: m.upstreamModelId }),
     ...(m.kind && { kind: m.kind }),
+    ...(m.supportedFormats?.length && { supportedFormats: m.supportedFormats }),
+    ...(m.targetFormat && { targetFormat: m.targetFormat }),
     ...(m.contextWindow > 0 && { contextWindow: m.contextWindow }),
     ...(m.maxOutput > 0 && { maxOutput: m.maxOutput }),
   }));
@@ -144,5 +155,5 @@ export function saveLiveModels(provider, models) {
 // too, so it cannot import this file directly — the server pushes it in.
 export async function installCatalogSource() {
   const { setCatalogSource } = await import("./capabilities.js");
-  setCatalogSource({ getModalities: getCatalogModalities, getLimits: getCatalogLimits, getLiveLimits });
+  setCatalogSource({ getModalities: getCatalogModalities, getLimits: getCatalogLimits, getLiveLimits, getLiveFormats });
 }

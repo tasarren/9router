@@ -772,7 +772,8 @@ let catalogSource = null;
  * Install the synced catalog reader (server only).
  * @param {{ getModalities: (provider: string, model: string) => object|null,
  *           getLimits: (provider: string, model: string) => object|null,
- *           getLiveLimits?: (provider: string, model: string) => object|null } | null} source
+ *           getLiveLimits?: (provider: string, model: string) => object|null,
+ *           getLiveFormats?: (provider: string, model: string) => object|null } | null} source
  */
 export function setCatalogSource(source) {
   catalogSource = source;
