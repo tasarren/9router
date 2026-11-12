@@ -13,7 +13,7 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 
-    const data = await getChartData(period, provider);
+    const data = await getChartData(period, provider, searchParams.get("account") || "");
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);

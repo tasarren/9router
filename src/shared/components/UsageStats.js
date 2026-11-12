@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { usePrivate } from "@/store/privacyStore";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
@@ -232,6 +233,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const [providerFilter, setProviderFilter] = useState("");
+  const [accountFilter, setAccountFilter] = useState("");
+  const [accounts, setAccounts] = useState([]);
+  const priv = usePrivate();
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
@@ -250,6 +254,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         for (const node of (nodesData?.nodes || [])) {
           nodeNameMap[node.id] = node.name;
         }
+        setAccounts((d?.connections || []).map((c) => ({ id: c.id, provider: c.provider, label: c.name || c.email || c.displayName || c.id.slice(0, 8) })));
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
@@ -282,6 +287,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
     const qs = new URLSearchParams({ period });
     if (providerFilter) qs.set("provider", providerFilter);
+    if (accountFilter) qs.set("account", accountFilter);
     fetch(`/api/usage/stats?${qs}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
@@ -296,11 +302,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         setLoading(false);
         setFetching(false);
       });
-  }, [period, providerFilter]);
+  }, [period, providerFilter, accountFilter]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource(providerFilter ? `/api/usage/stream?provider=${encodeURIComponent(providerFilter)}` : "/api/usage/stream");
+    const qs = new URLSearchParams();
+    if (providerFilter) qs.set("provider", providerFilter);
+    if (accountFilter) qs.set("account", accountFilter);
+    const es = new EventSource(`/api/usage/stream?${qs}`);
 
     es.onmessage = (e) => {
       try {
@@ -326,7 +335,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, [providerFilter]);
+  }, [providerFilter, accountFilter]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -380,7 +389,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         }
         return {
           columns: ACCOUNT_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byAccount, pendingMap, sortBy, sortOrder), "accountName"),
+          groupedData: groupDataByKey(sortData(stats.byAccount, pendingMap, sortBy, sortOrder).map((r) => ({ ...r, accountName: priv(r.accountName) })), "accountName"),
           storageKey: "usage-stats:expanded-accounts",
           emptyMessage: "No account-specific usage recorded yet.",
           renderSummaryCells: (group) => (
@@ -454,7 +463,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         };
       }
     }
-  }, [stats, tableView, sortBy, sortOrder]);
+  }, [stats, tableView, sortBy, sortOrder, priv]);
 
   // Connected providers plus any provider seen in the current stats.
   const providerOptions = useMemo(() => {
@@ -464,6 +473,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     const label = (id) => providers.find((p) => p.provider === id)?.nodeName || AI_PROVIDERS[id]?.name || id;
     return [...ids].map((id) => ({ id, label: label(id) })).sort((a, b) => a.label.localeCompare(b.label));
   }, [providers, stats?.byProvider, providerFilter]);
+
+  const accountOptions = useMemo(
+    () => accounts.filter((a) => a.provider === providerFilter).map((a) => ({ ...a, label: priv(a.label) })).sort((a, b) => a.label.localeCompare(b.label)),
+    [accounts, providerFilter, priv]
+  );
 
   if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
 
@@ -502,7 +516,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         <select
           id="usage-provider-filter"
           value={providerFilter}
-          onChange={(e) => setProviderFilter(e.target.value)}
+          onChange={(e) => { setProviderFilter(e.target.value); setAccountFilter(""); }}
           disabled={fetching}
           className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50"
           style={{ colorScheme: "auto" }}
@@ -512,6 +526,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             <option key={p.id} value={p.id}>{p.label}</option>
           ))}
         </select>
+        {accountOptions.length > 1 && (
+          <>
+            <label htmlFor="usage-account-filter" className="text-sm text-text-muted">Account</label>
+            <select
+              id="usage-account-filter"
+              value={accountFilter}
+              onChange={(e) => setAccountFilter(e.target.value)}
+              disabled={fetching}
+              className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-medium text-text-main focus:outline-none focus:ring-2 focus:ring-primary/50"
+              style={{ colorScheme: "auto" }}
+            >
+              <option value="">All accounts</option>
+              {accountOptions.map((a) => (
+                <option key={a.id} value={a.id}>{a.label}</option>
+              ))}
+            </select>
+          </>
+        )}
       </div>
 
       {/* Overview cards */}
@@ -531,7 +563,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} provider={providerFilter} />}
+      {loading ? spinner : <UsageChart period={period} provider={providerFilter} account={accountFilter} />}
 
       {/* Provider and model breakdown charts */}
       {!loading && (stats.byProvider || stats.byModel) && (

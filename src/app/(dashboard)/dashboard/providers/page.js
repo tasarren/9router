@@ -26,6 +26,7 @@ import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
+import { usePrivate } from "@/store/privacyStore";
 
 function getStatusDisplay(connected, error, errorCode, total) {
   const parts = [];
@@ -960,6 +961,7 @@ ApiKeyProviderCard.propTypes = {
 };
 
 function ProviderTestResultsView({ results }) {
+  const priv = usePrivate();
   if (results.error && !results.results) {
     return (
       <div className="text-center py-6">
@@ -1012,7 +1014,7 @@ function ProviderTestResultsView({ results }) {
           </span>
           <div className="min-w-0 flex-[1_1_160px]">
             <span className="block truncate font-medium sm:inline">
-              {r.connectionName}
+              {priv(r.connectionName)}
             </span>
             <span className="block truncate text-text-muted sm:ml-1.5 sm:inline">
               ({r.provider})

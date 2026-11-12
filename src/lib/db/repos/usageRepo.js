@@ -120,10 +120,10 @@ async function getConnectionMapCached() {
 }
 
 // One shape for the Recent Requests panel (ring + DB): newest first, deduped, with cache I/O.
-function toRecentRequests(items, provider) {
+function toRecentRequests(items, provider, connectionId) {
   const seen = new Set();
   return items
-    .filter((e) => !provider || e.provider === provider)
+    .filter((e) => (!provider || e.provider === provider) && (!connectionId || e.connectionId === connectionId))
     .map((e) => {
       const t = (typeof e.tokens === "string" ? parseJson(e.tokens, {}) : e.tokens) || {};
       return {
@@ -147,9 +147,10 @@ function toRecentRequests(items, provider) {
     .slice(0, 20);
 }
 
-function collectActiveRequests(connectionMap, provider) {
+function collectActiveRequests(connectionMap, provider, accountFilter) {
   const active = [];
   for (const [connectionId, models] of Object.entries(pendingRequests.byAccount)) {
+    if (accountFilter && connectionId !== accountFilter) continue;
     for (const [modelKey, count] of Object.entries(models)) {
       if (count > 0) {
         const accountName = connectionMap[connectionId] || `Account ${connectionId.slice(0, 8)}...`;
@@ -242,10 +243,10 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
   scheduleStatsEvent("pending");
 }
 
-export async function getActiveRequests(provider = "") {
-  const activeRequests = collectActiveRequests(await getConnectionMapCached(), provider);
+export async function getActiveRequests(provider = "", connectionId = "") {
+  const activeRequests = collectActiveRequests(await getConnectionMapCached(), provider, connectionId);
   await ensureRingInitialized();
-  const recentRequests = toRecentRequests(recentRing.items, provider);
+  const recentRequests = toRecentRequests(recentRing.items, provider, connectionId);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
   return { activeRequests, recentRequests, errorProvider, serverNow: Date.now() };
@@ -356,11 +357,33 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ? ORDER BY dateKey ASC`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all", { provider = "" } = {}) {
+// Optional provider/account filter, appended to usageHistory queries.
+function historyFilter(provider, connectionId) {
+  const conds = [];
+  const args = [];
+  if (provider) { conds.push(" AND provider = ?"); args.push(provider); }
+  if (connectionId) { conds.push(" AND connectionId = ?"); args.push(connectionId); }
+  return { pWhere: conds.join(""), pArgs: args };
+}
+
+// Daily rollups carry no per-account split, so an account filter rebuilds the
+// days from raw history (usageHistory is never pruned).
+function loadDays(db, maxDays, connectionId) {
+  if (!connectionId) return loadDaysInRange(db, maxDays);
+  const today = new Date();
+  const cutoff = maxDays == null ? "" : new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1).toISOString();
+  const rows = db.all(
+    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, tokens FROM usageHistory WHERE connectionId = ? AND timestamp >= ?`,
+    [connectionId, cutoff]
+  );
+  const days = {};
+  for (const r of rows) aggregateEntryToDay((days[getLocalDateKey(r.timestamp)] ||= {}), { ...r, tokens: parseJson(r.tokens, {}) });
+  return Object.keys(days).sort().map((dateKey) => ({ dateKey, data: days[dateKey] }));
+}
+
+export async function getUsageStats(period = "all", { provider = "", connectionId = "" } = {}) {
   const db = await getAdapter();
-  // Optional provider filter, appended to every usageHistory query below.
-  const pWhere = provider ? " AND provider = ?" : "";
-  const pArgs = provider ? [provider] : [];
+  const { pWhere, pArgs } = historyFilter(provider, connectionId);
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
     import("./connectionsRepo.js"),
@@ -387,7 +410,7 @@ export async function getUsageStats(period = "all", { provider = "" } = {}) {
   }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory WHERE 1=1${pWhere} ORDER BY id DESC LIMIT 100`, pArgs);
+  const recentRows = db.all(`SELECT timestamp, provider, model, connectionId, tokens, status FROM usageHistory WHERE 1=1${pWhere} ORDER BY id DESC LIMIT 100`, pArgs);
   const recentRequests = toRecentRequests(recentRows);
 
   const stats = {
@@ -402,7 +425,7 @@ export async function getUsageStats(period = "all", { provider = "" } = {}) {
     errorProvider: (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "",
   };
 
-  stats.activeRequests = collectActiveRequests(connectionMap, provider);
+  stats.activeRequests = collectActiveRequests(connectionMap, provider, connectionId);
 
   // last10Minutes — query 10min window
   const now = new Date();
@@ -434,7 +457,7 @@ export async function getUsageStats(period = "all", { provider = "" } = {}) {
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
     const maxDays = periodDays[period] || null;
-    const dayRows = loadDaysInRange(db, maxDays);
+    const dayRows = loadDays(db, maxDays, connectionId);
     const providerFilter = provider;
 
     for (const dr of dayRows) {
@@ -661,11 +684,10 @@ export async function getUsageStats(period = "all", { provider = "" } = {}) {
   return stats;
 }
 
-export async function getChartData(period = "7d", provider = "") {
+export async function getChartData(period = "7d", provider = "", connectionId = "") {
   const db = await getAdapter();
   const now = Date.now();
-  const pWhere = provider ? " AND provider = ?" : "";
-  const pArgs = provider ? [provider] : [];
+  const { pWhere, pArgs } = historyFilter(provider, connectionId);
   const pickDay = (d) => (d && provider ? d.byProvider?.[provider] : d);
   const addRow = (bucket, r) => {
     const tokens = (r.promptTokens || 0) + (r.completionTokens || 0);
@@ -747,7 +769,7 @@ export async function getChartData(period = "7d", provider = "") {
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   if (period === "all") {
-    const dayRows = loadDaysInRange(db, null);
+    const dayRows = loadDays(db, null, connectionId);
     if (!dayRows.length) return [];
     const dayMap = {};
     for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
@@ -769,7 +791,7 @@ export async function getChartData(period = "7d", provider = "") {
   const today = new Date();
 
   // Build map of dateKey → day data
-  const dayRows = loadDaysInRange(db, bucketCount);
+  const dayRows = loadDays(db, bucketCount, connectionId);
   const dayMap = {};
   for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
 

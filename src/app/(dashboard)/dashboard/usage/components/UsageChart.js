@@ -96,7 +96,7 @@ function SeriesTooltip({ active, payload, label, series, formatter }) {
   );
 }
 
-export default function UsageChart({ period = "7d", provider = "" }) {
+export default function UsageChart({ period = "7d", provider = "", account = "" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -115,6 +115,7 @@ export default function UsageChart({ period = "7d", provider = "" }) {
     try {
       const qs = new URLSearchParams({ period });
       if (provider) qs.set("provider", provider);
+      if (account) qs.set("account", account);
       const res = await fetch(`/api/usage/chart?${qs}`);
       if (res.ok) {
         const json = await res.json();
@@ -125,7 +126,7 @@ export default function UsageChart({ period = "7d", provider = "" }) {
     } finally {
       setLoading(false);
     }
-  }, [period, provider]);
+  }, [period, provider, account]);
 
   useEffect(() => {
     fetchData();
@@ -262,4 +263,5 @@ export default function UsageChart({ period = "7d", provider = "" }) {
 UsageChart.propTypes = {
   period: PropTypes.string,
   provider: PropTypes.string,
+  account: PropTypes.string,
 };

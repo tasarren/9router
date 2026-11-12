@@ -6,6 +6,7 @@ import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
+import { usePrivate } from "@/store/privacyStore";
 
 const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
 const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
@@ -35,6 +36,7 @@ function toImagePreviewSrc(value) {
 }
 
 export function GenericExampleCard({ providerId, kind }) {
+  const priv = usePrivate();
   const providerAlias = getProviderAlias(providerId);
   const resolvedId = resolveProviderId(providerAlias);
   const safeProviderAlias = resolvedId === providerId ? providerAlias : providerId;
@@ -324,7 +326,7 @@ export function GenericExampleCard({ providerId, kind }) {
               <option value="">Auto (by priority)</option>
               {connections.map((c) => {
                 const plan = c.providerSpecificData?.chatgptPlanType;
-                const label = c.email || c.name || c.id.slice(0, 8);
+                const label = priv(c.email || c.name || c.id.slice(0, 8));
                 return (
                   <option key={c.id} value={c.id}>
                     {label}{plan ? ` [${plan}]` : ""}

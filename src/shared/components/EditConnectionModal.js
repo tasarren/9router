@@ -8,8 +8,10 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { usePrivate } from "@/store/privacyStore";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
+  const priv = usePrivate();
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
@@ -219,7 +221,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         {isOAuth && connection.email && (
           <div className="bg-sidebar/50 p-3 rounded-lg">
             <p className="text-sm text-text-muted mb-1">Email</p>
-            <p className="font-medium">{connection.email}</p>
+            <p className="font-medium">{priv(connection.email)}</p>
           </div>
         )}
         <Input
