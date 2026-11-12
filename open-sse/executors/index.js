@@ -91,10 +91,23 @@ const executors = {
 
 const defaultCache = new Map();
 
+// Route every refreshCredentials through the app's cross-process refresh guard
+// (src/sse/services/refreshGuard.js sets the global; absent in tests and the CLI).
+function guarded(executor) {
+  if (executor.__refreshGuarded) return executor;
+  const refresh = executor.refreshCredentials.bind(executor);
+  executor.refreshCredentials = (credentials, ...rest) => {
+    const guard = globalThis.__9rRefreshGuard;
+    return guard ? guard(executor.provider, credentials, () => refresh(credentials, ...rest)) : refresh(credentials, ...rest);
+  };
+  executor.__refreshGuarded = true;
+  return executor;
+}
+
 export function getExecutor(provider) {
-  if (executors[provider]) return executors[provider];
+  if (executors[provider]) return guarded(executors[provider]);
   if (!defaultCache.has(provider)) defaultCache.set(provider, new DefaultExecutor(provider));
-  return defaultCache.get(provider);
+  return guarded(defaultCache.get(provider));
 }
 
 export function hasSpecializedExecutor(provider) {

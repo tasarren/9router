@@ -1,3 +1,4 @@
+import { onShutdown as registerShutdown } from "../../shutdown.js";
 // Bun runtime adapter — uses built-in bun:sqlite (native, fastest under Bun).
 // Loaded only when process.versions.bun is present.
 import { PRAGMA_SQL } from "../schema.js";
@@ -32,8 +33,7 @@ export async function createBunSqliteAdapter(filePath) {
   }
   const onShutdown = () => gracefulClose();
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
+  registerShutdown(onShutdown, { late: true });
 
   return {
     driver: "bun:sqlite",

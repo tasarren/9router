@@ -16,6 +16,7 @@ export {
   deleteProviderConnection, deleteProviderConnectionsByProvider,
   reorderProviderConnections, cleanupProviderConnections,
 } from "./repos/connectionsRepo.js";
+export { acquireLease, releaseLease } from "./repos/leaseRepo.js";
 
 // Provider nodes
 export {

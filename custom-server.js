@@ -13,6 +13,41 @@ const origCreate = http.createServer.bind(http);
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
 process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
+// Graceful drain on SIGTERM/SIGINT: stop accepting connections, let open requests
+// (long SSE streams included) finish, then run the app's shutdown hooks
+// (src/lib/shutdown.js: buffer flushes, database close) and exit. Next's own
+// handler would close at once, so it is turned off. Set the container's
+// stop_grace_period above SHUTDOWN_GRACE_MS or Docker kills the drain early.
+const SHUTDOWN_GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS) || 10 * 60 * 1000;
+const servers = new Set();
+const stopHooks = [];
+process.env.NEXT_MANUAL_SIG_HANDLE = "1";
+globalThis.__9rDrain = true;
+
+let draining = false;
+async function drainAndExit(signal) {
+  if (draining) return;
+  draining = true;
+  console.log(`[shutdown] ${signal}: draining open requests (max ${Math.round(SHUTDOWN_GRACE_MS / 1000)}s)`);
+  for (const stop of stopHooks) { try { stop(); } catch { /* ignore */ } }
+  const closed = Promise.all([...servers].map((s) => new Promise((resolve) => {
+    s.close(() => resolve());
+    s.closeIdleConnections?.();
+  })));
+  // Keep-alive sockets that go idle after their last response must close too.
+  const idle = setInterval(() => servers.forEach((s) => s.closeIdleConnections?.()), 1000);
+  const timedOut = await Promise.race([
+    closed.then(() => false),
+    new Promise((resolve) => setTimeout(() => resolve(true), SHUTDOWN_GRACE_MS).unref()),
+  ]);
+  clearInterval(idle);
+  if (timedOut) console.log("[shutdown] grace period over, closing remaining connections");
+  try { await globalThis.__9rRunShutdownHooks?.(); } catch (e) { console.error("[shutdown]", e && e.message ? e.message : e); }
+  process.exit(0);
+}
+process.once("SIGTERM", () => drainAndExit("SIGTERM"));
+process.once("SIGINT", () => drainAndExit("SIGINT"));
+
 let backgroundRefreshStarted = false;
 
 function startBackgroundTokenRefreshFromCustomServer() {
@@ -28,15 +63,7 @@ function startBackgroundTokenRefreshFromCustomServer() {
       } catch (e) {
         console.error("[BackgroundTokenRefresh] start failed:", e && e.message ? e.message : e);
       }
-      const stop = () => {
-        try {
-          m.stopBackgroundTokenRefresh();
-        } catch {
-          /* ignore */
-        }
-      };
-      process.once("SIGINT", stop);
-      process.once("SIGTERM", stop);
+      stopHooks.push(() => m.stopBackgroundTokenRefresh());
     })
     .catch((e) => {
       // Expected in published CLI standalone (src/ not on disk). App bootstrap covers it.
@@ -73,6 +100,7 @@ http.createServer = (...args) => {
     return handler(req, res);
   };
   const server = origCreate(...rest, wrapped);
+  servers.add(server);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });
