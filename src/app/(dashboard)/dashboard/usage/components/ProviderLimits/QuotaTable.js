@@ -154,6 +154,10 @@ export default function QuotaTable({
           const isUnlimited = quota.unlimited === true;
           const isCreditBalance = quota.isCreditBalance === true;
           const isUnknown = quota.limitUnknown === true;
+          // Shared-pool rows (NaN credits): bar = pool remaining, text = this model's spend.
+          const poolText = typeof quota.poolShare === "number"
+            ? `${quota.used.toLocaleString()} ${quota.unit || ""} · ${+quota.poolShare.toFixed(1)}% of pool used`
+            : null;
           const colors = isUnknown
             ? { text: "text-text-muted", bg: "", bgLight: "", emoji: "•" }
             : isCreditBalance
@@ -230,7 +234,9 @@ export default function QuotaTable({
                   <span
                     className="text-text-muted truncate"
                     title={
-                      isUnknown
+                      poolText
+                        ? `${poolText} · shared pool ${quota.total.toLocaleString()} ${quota.unit || ""}`
+                        : isUnknown
                         ? `${quota.used.toLocaleString()} ${quota.unit || "units"} used · ${(quota.apiRequests || 0).toLocaleString()} recorded requests · limit unpublished`
                         : isUnlimited
                         ? `${quota.used.toLocaleString()} used · Unlimited`
@@ -239,7 +245,9 @@ export default function QuotaTable({
                         : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}${quota.unit ? ` ${quota.unit}` : ""}`
                     }
                   >
-                    {isUnknown
+                    {poolText
+                      ? poolText
+                      : isUnknown
                       ? `${quota.used.toLocaleString()} ${quota.unit || "units"} used · ${(quota.apiRequests || 0).toLocaleString()} requests`
                       : isUnlimited
                       ? `${quota.used.toLocaleString()} used · Unlimited`

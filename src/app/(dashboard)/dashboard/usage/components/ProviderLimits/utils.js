@@ -801,6 +801,8 @@ export function parseQuotaData(provider, data) {
               limitUnknown: quota.limitUnknown === true,
               unit: quota.unit,
               apiRequests: quota.apiRequests,
+              remainingPercentage: quota.remainingPercentage,
+              poolShare: quota.poolShare,
             });
           });
         }

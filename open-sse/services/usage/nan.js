@@ -4,9 +4,10 @@ import { U } from "./shared.js";
 const finite = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
 const unavailable = () => ({ plan: "NaN", message: "NaN usage unavailable: missing or invalid counters" });
 
-// /v1/usage report. Credits plan: `credits` holds the period pool, by_model rows carry
-// each model's credits (bars use the pool as total so they compare). Accounts without
-// credits get `credits: null`: fall back to tokens per model with no published limit.
+// /v1/usage report. Credits plan: `credits` holds the account's period pool; by_model rows
+// carry each model's spend from that pool. Model rows report the pool's remaining share
+// (an empty pool blocks every model) plus `poolShare`, their part of the credits used.
+// Accounts without credits get `credits: null`: fall back to tokens with no published limit.
 export function formatNanUsage(report, fallbackResetAt) {
   const rows = report?.totals?.by_model;
   if (!Array.isArray(rows)) return unavailable();
@@ -16,9 +17,12 @@ export function formatNanUsage(report, fallbackResetAt) {
   if (pool && finite(pool.allowance) && pool.allowance > 0 && finite(pool.used)) {
     const total = pool.allowance; // `used` counts the allowance only; pack credits are separate
     const resetAt = Number.isFinite(Date.parse(pool.period_end)) ? pool.period_end : fallbackResetAt;
-    const quotas = { credits: { used: pool.used, total, resetAt, unit: "credits" } };
+    const remainingPercentage = pool.frozen ? 0 : Math.max(0, Math.round((1 - pool.used / total) * 100));
+    const quotas = { credits: { used: pool.used, total, resetAt, unit: "credits", remainingPercentage } };
     for (const r of rows) {
-      if (usable(r) && finite(r.credits)) quotas[r.model] = { used: r.credits, total, resetAt, unit: "credits" };
+      if (!usable(r) || !finite(r.credits)) continue;
+      const poolShare = pool.used > 0 ? Math.min(100, (r.credits / pool.used) * 100) : 0;
+      quotas[r.model] = { used: r.credits, total, resetAt, unit: "credits", remainingPercentage, poolShare };
     }
     return { plan: pool.frozen ? "NaN (frozen)" : "NaN", quotas };
   }
