@@ -13,9 +13,8 @@ export default {
   transport: {
     baseUrl: "https://api.nan.builders/v1/chat/completions",
     usage: {
-      // Legacy /api/usage/quota stopped updating after the switch to credits (2026-11).
+      // Reports credits (period pool + per model) and tokens. Legacy /api/usage/quota is dead.
       url: "https://api.nan.builders/v1/usage",
-      creditsUrl: "https://cloud-api.nan.builders/api/usage/credits",
     },
     // NaN only emits a usage chunk when the client asks for it; without it streams are estimated.
     quirks: { includeStreamUsage: true },

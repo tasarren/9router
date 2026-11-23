@@ -1,4 +1,5 @@
 import { getProviderConnections } from "@/models";
+import { acquireLease } from "@/lib/db/index.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials, checkAndRefreshToken } from "@/sse/services/tokenRefresh";
@@ -782,8 +783,8 @@ export async function fetchConnectionModels(connection) {
 // Providers whose persisted live list replaces the static one in /v1/models.
 export const PERSISTED_CATALOG_PROVIDERS = ["claude", "codex", "nan", "opencode-go"];
 
-// Boot-time fill of live-models.json: first active connection per provider.
-// A failed fetch keeps the last stored list; "Refresh catalog" in the dashboard retries.
+// Fill live-models.json: first active connection per provider.
+// A failed fetch keeps the last stored list; the next run or "Refresh catalog" retries.
 export async function refreshLiveCatalogs() {
   const connections = await getProviderConnections().catch(() => []);
   for (const provider of PERSISTED_CATALOG_PROVIDERS) {
@@ -793,4 +794,23 @@ export async function refreshLiveCatalogs() {
     const { status, body } = await fetchConnectionModels({ ...connection, ...fresh });
     console.log(`[live-models] ${provider}: ${status === 200 ? `${body.models?.length || 0} models` : body.error}`);
   }
+}
+
+// Refresh at boot, then every LIVE_CATALOG_REFRESH_MINUTES (default 30, 0 = boot only).
+// Timed runs take a DB lease so overlapping replicas (start-first deploys) refresh once.
+export function startLiveCatalogRefresh() {
+  if (globalThis.__9rLiveCatalogTimer !== undefined) return;
+  const minutes = Number(process.env.LIVE_CATALOG_REFRESH_MINUTES ?? 30);
+  const everyMs = Number.isFinite(minutes) && minutes > 0 ? minutes * 60_000 : 0;
+  const run = async (timed) => {
+    try {
+      if (timed && !(await acquireLease("live-catalog-refresh", everyMs - 60_000))) return;
+      await refreshLiveCatalogs();
+    } catch (error) {
+      console.log("[live-models] refresh failed:", error.message);
+    }
+  };
+  run(false);
+  globalThis.__9rLiveCatalogTimer = everyMs ? setInterval(() => run(true), everyMs) : null;
+  globalThis.__9rLiveCatalogTimer?.unref?.();
 }
