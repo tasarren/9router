@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import REGISTRY from "../../open-sse/providers/registry/index.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { parseUpstreamError } from "../../open-sse/utils/error.js";
-import { formatNanUsage } from "../../open-sse/services/usage/nan.js";
+import { formatNanUsage, POOL_ROW } from "../../open-sse/services/usage/nan.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 assert.equal(new Set(REGISTRY.map((item) => item.id)).size, REGISTRY.length, "provider IDs must be unique");
@@ -34,7 +34,7 @@ const rows = [
 ];
 const credits = { period_start: "2026-11-01T15:06:22Z", period_end: resetAt, allowance: 7000, used: 2756.7, remaining: 4243.3, pack_credits: 0, frozen: false };
 assert.deepEqual(formatNanUsage({ credits, totals: { by_model: rows } }, fallback), { plan: "NaN", quotas: {
-  credits: { used: 2756.7, total: 7000, resetAt, unit: "credits", remainingPercentage: 61 },
+  [POOL_ROW]: { used: 2756.7, total: 7000, resetAt, unit: "credits", remainingPercentage: 61 },
   "deepseek-v4-flash": { used: 439.4, total: 7000, resetAt, unit: "credits", remainingPercentage: 61, poolShare: (439.4 / 2756.7) * 100 },
   "kimi-k3.1-pro": { used: 0, total: 7000, resetAt, unit: "credits", remainingPercentage: 61, poolShare: 0 },
 } });
