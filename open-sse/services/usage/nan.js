@@ -2,13 +2,13 @@ import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
 
 const finite = (n) => typeof n === "number" && Number.isFinite(n) && n >= 0;
-// Account-wide pool row; listed first, above the per-model rows.
-export const POOL_ROW = "Account credits (all models)";
+// Account-wide credit pool row; the dashboard pins it above the per-model rows.
+export const POOL_ROW = "Quota";
 const unavailable = () => ({ plan: "NaN", message: "NaN usage unavailable: missing or invalid counters" });
 
 // /v1/usage report. Credits plan: `credits` holds the account's period pool; by_model rows
-// carry each model's spend from that pool. Model rows report the pool's remaining share
-// (an empty pool blocks every model) plus `poolShare`, their part of the credits used.
+// carry each model's spend from that pool. Only the pool row has a limit and a reset;
+// model rows (`spendOnly`) show credits used, nothing remaining.
 // Accounts without credits get `credits: null`: fall back to tokens with no published limit.
 export function formatNanUsage(report, fallbackResetAt) {
   const rows = report?.totals?.by_model;
@@ -20,11 +20,9 @@ export function formatNanUsage(report, fallbackResetAt) {
     const total = pool.allowance; // `used` counts the allowance only; pack credits are separate
     const resetAt = Number.isFinite(Date.parse(pool.period_end)) ? pool.period_end : fallbackResetAt;
     const remainingPercentage = pool.frozen ? 0 : Math.max(0, Math.round((1 - pool.used / total) * 100));
-    const quotas = { [POOL_ROW]: { used: pool.used, total, resetAt, unit: "credits", remainingPercentage } };
+    const quotas = { [POOL_ROW]: { used: pool.used, total, resetAt, unit: "credits", remainingPercentage, pinned: true } };
     for (const r of rows) {
-      if (!usable(r) || !finite(r.credits)) continue;
-      const poolShare = pool.used > 0 ? Math.min(100, (r.credits / pool.used) * 100) : 0;
-      quotas[r.model] = { used: r.credits, total, resetAt, unit: "credits", remainingPercentage, poolShare };
+      if (usable(r) && finite(r.credits)) quotas[r.model] = { used: r.credits, total: 0, unit: "credits", spendOnly: true };
     }
     return { plan: pool.frozen ? "NaN (frozen)" : "NaN", quotas };
   }

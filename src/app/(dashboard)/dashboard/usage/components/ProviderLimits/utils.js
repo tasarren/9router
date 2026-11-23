@@ -802,7 +802,8 @@ export function parseQuotaData(provider, data) {
               unit: quota.unit,
               apiRequests: quota.apiRequests,
               remainingPercentage: quota.remainingPercentage,
-              poolShare: quota.poolShare,
+              pinned: quota.pinned === true,
+              spendOnly: quota.spendOnly === true,
             });
           });
         }

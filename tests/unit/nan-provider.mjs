@@ -34,15 +34,14 @@ const rows = [
 ];
 const credits = { period_start: "2026-11-01T15:06:22Z", period_end: resetAt, allowance: 7000, used: 2756.7, remaining: 4243.3, pack_credits: 0, frozen: false };
 assert.deepEqual(formatNanUsage({ credits, totals: { by_model: rows } }, fallback), { plan: "NaN", quotas: {
-  [POOL_ROW]: { used: 2756.7, total: 7000, resetAt, unit: "credits", remainingPercentage: 61 },
-  "deepseek-v4-flash": { used: 439.4, total: 7000, resetAt, unit: "credits", remainingPercentage: 61, poolShare: (439.4 / 2756.7) * 100 },
-  "kimi-k3.1-pro": { used: 0, total: 7000, resetAt, unit: "credits", remainingPercentage: 61, poolShare: 0 },
+  [POOL_ROW]: { used: 2756.7, total: 7000, resetAt, unit: "credits", remainingPercentage: 61, pinned: true },
+  "deepseek-v4-flash": { used: 439.4, total: 0, unit: "credits", spendOnly: true },
+  "kimi-k3.1-pro": { used: 0, total: 0, unit: "credits", spendOnly: true },
 } });
 assert.equal(formatNanUsage({ credits: { ...credits, frozen: true }, totals: { by_model: [] } }, fallback).plan, "NaN (frozen)");
-// Empty or frozen pool: every model row shows 0% left, used or not.
+// Empty or frozen pool: the account quota shows 0% left.
 for (const pool of [{ ...credits, used: 7000 }, { ...credits, frozen: true }]) {
-  const q = formatNanUsage({ credits: pool, totals: { by_model: rows } }, fallback).quotas;
-  assert.equal(q["kimi-k3.1-pro"].remainingPercentage, 0);
+  assert.equal(formatNanUsage({ credits: pool, totals: { by_model: rows } }, fallback).quotas[POOL_ROW].remainingPercentage, 0);
 }
 // credits: null (account not billed in credits) or broken pool: tokens, no limit.
 for (const pool of [null, { ...credits, allowance: 0 }, { ...credits, used: "1" }]) {
