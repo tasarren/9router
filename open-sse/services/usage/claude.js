@@ -9,8 +9,6 @@ import { U, parseResetTime } from "./shared.js";
 // Claude API config (urls from registry, apiVersion is header logic kept here)
 const CLAUDE_CONFIG = {
   oauthUsageUrl: U("claude").oauthUrl,
-  usageUrl: U("claude").orgUrl,
-  settingsUrl: U("claude").settingsUrl,
   profileUrl: U("claude").profileUrl,
   resetUrl: U("claude").resetUrl,
   apiVersion: ANTHROPIC_API_VERSION,
@@ -63,9 +61,7 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
   try {
     // Skip OAuth usage call while this token is cooling down from a recent 429
     const cooldownUntil = oauthCooldown.get(accessToken);
-    if (cooldownUntil && Date.now() < cooldownUntil) {
-      return await getClaudeUsageLegacy(accessToken, proxyOptions);
-    }
+    if (cooldownUntil && Date.now() < cooldownUntil) return rateLimitedMessage(cooldownUntil);
 
     // Primary: OAuth usage endpoint (Claude Code consumer OAuth tokens)
     // cedar_ember=1 adds the "limit reset" grant block (same flag Claude Code sends)
@@ -142,15 +138,44 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
 
     // Cool down OAuth usage polling after a 429 (quota endpoint only)
     if (oauthResponse.status === 429) {
-      oauthCooldown.set(accessToken, Date.now() + OAUTH_429_COOLDOWN_MS);
+      const until = Date.now() + OAUTH_429_COOLDOWN_MS;
+      oauthCooldown.set(accessToken, until);
+      return rateLimitedMessage(until);
     }
 
-    // Fallback: legacy settings + org usage endpoint
-    console.warn(`[Claude Usage] OAuth endpoint returned ${oauthResponse.status}, falling back to legacy`);
-    return await getClaudeUsageLegacy(accessToken, proxyOptions);
+    const detail = await upstreamErrorDetail(oauthResponse);
+    console.warn(`[Claude Usage] usage endpoint returned ${oauthResponse.status}${detail ? `: ${detail}` : ""}`);
+    return usageErrorMessage(oauthResponse.status, detail);
   } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
+    return { message: `Could not reach the Claude usage endpoint: ${error.message}` };
   }
+}
+
+function rateLimitedMessage(until) {
+  const minutes = Math.max(1, Math.ceil((until - Date.now()) / 60000));
+  return { message: `Claude rate-limited the usage check (429). Chat still works. Retrying in ${minutes} min.` };
+}
+
+async function upstreamErrorDetail(response) {
+  const text = await response.text().catch(() => "");
+  try {
+    const body = JSON.parse(text);
+    return String(body?.error?.message || body?.message || "").slice(0, 200);
+  } catch {
+    return text.slice(0, 200);
+  }
+}
+
+// needsReauth makes the usage route force-refresh the token once before showing it.
+export function usageErrorMessage(status, detail = "") {
+  const suffix = detail ? ` Claude said: "${detail}"` : "";
+  if (status === 401) {
+    return { message: `Claude sign-in expired or was revoked (401). Use Re-auth on this account.${suffix}`, needsReauth: true };
+  }
+  if (status === 403) {
+    return { message: `Claude refused the usage check (403). Use Re-auth on this account.${suffix}`, needsReauth: true };
+  }
+  return { message: `Claude usage check failed (${status}).${suffix}` };
 }
 
 // Free "limit reset" grants (Anthropic program id "cedar_ember").
@@ -215,56 +240,4 @@ export async function consumeClaudeResetGrant(accessToken, grantId, proxyOptions
     resetsLeft: data?.resets_left ?? null,
     message: data?.error?.message || null,
   };
-}
-
-/**
- * Legacy Claude usage for API key / org admin users
- */
-async function getClaudeUsageLegacy(accessToken, proxyOptions = null) {
-  try {
-    const settingsResponse = await proxyAwareFetch(CLAUDE_CONFIG.settingsUrl, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "anthropic-version": CLAUDE_CONFIG.apiVersion,
-      },
-    }, proxyOptions);
-
-    if (settingsResponse.ok) {
-      const settings = await settingsResponse.json();
-
-      if (settings.organization_id) {
-        const usageResponse = await proxyAwareFetch(
-          CLAUDE_CONFIG.usageUrl.replace("{org_id}", settings.organization_id),
-          {
-            method: "GET",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "anthropic-version": CLAUDE_CONFIG.apiVersion,
-            },
-          },
-          proxyOptions
-        );
-
-        if (usageResponse.ok) {
-          const usage = await usageResponse.json();
-          return {
-            plan: settings.plan || "Unknown",
-            organization: settings.organization_name,
-            quotas: usage,
-          };
-        }
-      }
-
-      return {
-        plan: settings.plan || "Unknown",
-        organization: settings.organization_name,
-        message: "Claude connected. Usage details require admin access.",
-      };
-    }
-
-    return { message: "Claude connected. Usage API requires admin permissions." };
-  } catch (error) {
-    return { message: `Claude connected. Unable to fetch usage: ${error.message}` };
-  }
 }

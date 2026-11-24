@@ -139,11 +139,12 @@ const pendingExchanges = new Map();
  * Register a pending exchange session for server-side mode.
  * Modal client calls this before opening popup.
  */
-export function registerCodexSession({ state, codeVerifier, redirectUri }) {
+export function registerCodexSession({ state, codeVerifier, redirectUri, replaceId }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   pendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    replaceId,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -235,6 +236,7 @@ export function startCodexProxy(appPort) {
             provider: "codex",
             authType: "oauth",
             ...tokenData,
+            replaceId: session.replaceId,
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,
@@ -307,11 +309,12 @@ const XAI_PROXY_TIMEOUT_MS = 300000; // 5 minutes
 const XAI_PROXY_PORT = 56121;
 const xaiPendingExchanges = new Map();
 
-export function registerXaiSession({ state, codeVerifier, redirectUri }) {
+export function registerXaiSession({ state, codeVerifier, redirectUri, replaceId }) {
   if (!state || !codeVerifier || !redirectUri) return false;
   xaiPendingExchanges.set(state, {
     codeVerifier,
     redirectUri,
+    replaceId,
     status: "pending",
     createdAt: Date.now(),
   });
@@ -377,6 +380,7 @@ export function startXaiProxy(appPort) {
             provider: "xai",
             authType: "oauth",
             ...tokenData,
+            replaceId: session.replaceId,
             expiresAt: tokenData.expiresIn
               ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
               : null,

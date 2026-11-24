@@ -155,7 +155,14 @@ export async function createProviderConnection(data) {
       : all.length;
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
+    if (data.replaceId) {
+      // Re-auth: the user picked the row to refresh, so skip identity matching.
+      existing = all.find((c) => c.id === data.replaceId);
+      if (!existing) throw new Error("The connection to re-authorize no longer exists.");
+      if (existing.email && data.email && existing.email.toLowerCase() !== data.email.toLowerCase()) {
+        throw new Error(`You signed in as ${data.email}, but this connection belongs to ${existing.email}. Sign in with that account, or add a new connection.`);
+      }
+    } else if (data.authType === "oauth" && data.email) {
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
@@ -209,8 +216,11 @@ export async function createProviderConnection(data) {
         err.existingName = existing.name;
         throw err;
       }
-      const normalized = resetHealthStateOnActivation(existing, data);
+      const { replaceId, ...patch } = data;
+      const normalized = resetHealthStateOnActivation(existing, patch);
       const merged = { ...existing, ...normalized, updatedAt: now };
+      // Re-auth keeps per-account settings (proxy, routing rules) the login does not send.
+      if (replaceId) merged.providerSpecificData = { ...existing.providerSpecificData, ...patch.providerSpecificData };
       upsert(db, merged);
       result = merged;
       return;

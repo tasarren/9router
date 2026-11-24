@@ -36,6 +36,8 @@ const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
 // Providers whose registry list is only an offline fallback: the dashboard
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
+// ponytail: Re-auth runs only through the generic OAuthModal; these providers use their own login modals.
+const CUSTOM_AUTH_MODAL_PROVIDERS = new Set(["kiro", "cursor", "zed", "gitlab", "xiaomi-mimo"]);
 const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "codex", "nan", "opencode-go", "antigravity"]);
 
 const AUTO_PING_SETTINGS_KEYS = {
@@ -57,6 +59,7 @@ export default function ProviderDetailPage() {
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
+  const [reauthConnectionId, setReauthConnectionId] = useState(null);
   const [showXiaomiMimoModal, setShowXiaomiMimoModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
@@ -869,6 +872,12 @@ export default function ProviderDetailPage() {
   const handleOAuthSuccess = () => {
     fetchConnections();
     setShowOAuthModal(false);
+    setReauthConnectionId(null);
+  };
+
+  const closeOAuthModal = () => {
+    setShowOAuthModal(false);
+    setReauthConnectionId(null);
   };
 
   const handleIFlowCookieSuccess = () => {
@@ -1113,6 +1122,10 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                onReauth={conn.authType === "oauth" && !CUSTOM_AUTH_MODAL_PROVIDERS.has(providerId) ? () => {
+                  setReauthConnectionId(conn.id);
+                  setShowOAuthModal(true);
+                } : null}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
             </div>
@@ -1920,8 +1933,9 @@ export default function ProviderDetailPage() {
           isOpen={showOAuthModal}
           provider={providerId}
           providerInfo={providerInfo}
+          replaceId={reauthConnectionId || undefined}
           onSuccess={handleOAuthSuccess}
-          onClose={() => setShowOAuthModal(false)}
+          onClose={closeOAuthModal}
         />
       )}
 
