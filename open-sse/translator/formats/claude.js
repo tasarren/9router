@@ -13,6 +13,13 @@ import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
 
+// TTL of the conversation breakpoints (last assistant turn, final tool results).
+// System and tools always use 1h. Set from the "claudeCacheTtl" setting per request.
+let messageCacheControl = CACHE_CONTROL_5M;
+export function setClaudeMessageCacheTtl(ttl) {
+  messageCacheControl = ttl === "1h" ? CACHE_CONTROL_1H : CACHE_CONTROL_5M;
+}
+
 // Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
 // ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
 // deferred tools at the tail, which is exactly where the cache anchor lands.
@@ -358,7 +365,7 @@ export function ensureTrailingUserTurn(messages, originalLastRole) {
   return [...messages, { role: ROLE.USER, content: [{ type: CLAUDE_BLOCK.TEXT, text: TRAILING_USER_PLACEHOLDER }] }];
 }
 
-// Put a 5m breakpoint on the last cache-eligible block of a message.
+// Put a conversation breakpoint on the last cache-eligible block of a message.
 // thinking/redacted_thinking blocks do not accept cache_control.
 function markLastCacheableBlock(msg) {
   if (!Array.isArray(msg?.content)) return false;
@@ -366,7 +373,7 @@ function markLastCacheableBlock(msg) {
     const block = msg.content[i];
     if (typeof block !== "object" || block === null) continue;
     if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
-    block.cache_control = { ...CACHE_CONTROL_5M };
+    block.cache_control = { ...messageCacheControl };
     return true;
   }
   return false;
@@ -617,7 +624,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           for (let j = msg.content.length - 1; j >= 0; j--) {
             const block = msg.content[j];
             if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
+              block.cache_control = { ...messageCacheControl };
               break;
             }
           }

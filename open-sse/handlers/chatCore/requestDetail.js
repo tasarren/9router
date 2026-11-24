@@ -36,7 +36,8 @@ export function extractUsageFromResponse(responseBody) {
       completion_tokens: responseBody.usage.output_tokens || 0,
       cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.input_tokens_details?.cached_tokens,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
+      cache_creation_1h_input_tokens: responseBody.usage.cache_creation?.ephemeral_1h_input_tokens
     };
   }
 

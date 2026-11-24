@@ -83,6 +83,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [claudeCacheTtl, setClaudeCacheTtl] = useState("5m");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
   const [scheduleConnection, setScheduleConnection] = useState(null);
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -345,6 +346,7 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      setClaudeCacheTtl(settingsData.claudeCacheTtl === "1h" ? "1h" : "5m");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {}, schedules: apCfg.schedules || {} });
@@ -453,6 +455,15 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error saving thinking config:", error);
     }
+  };
+
+  const handleClaudeCacheTtlChange = (ttl) => {
+    setClaudeCacheTtl(ttl);
+    fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ claudeCacheTtl: ttl }),
+    }).catch((error) => console.log("Error saving cache TTL:", error));
   };
 
   const handleThinkingModeChange = (mode) => {
@@ -1833,6 +1844,18 @@ export default function ProviderDetailPage() {
                 {providerThinkingLevels.map((opt) => (
                   <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
                 ))}
+              </select>
+            )}
+            {providerId === "claude" && (
+              <select
+                value={claudeCacheTtl}
+                onChange={(e) => handleClaudeCacheTtlChange(e.target.value)}
+                aria-label="Conversation cache TTL"
+                title="TTL of the conversation cache breakpoints. System prompt and tools always use 1h. 1h writes cost 2x input instead of 1.25x; it pays off only when turns are more than 5 minutes apart."
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+              >
+                <option value="5m">Cache: 5m</option>
+                <option value="1h">Cache: 1h</option>
               </select>
             )}
           </div>

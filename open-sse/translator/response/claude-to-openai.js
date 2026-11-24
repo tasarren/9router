@@ -37,11 +37,15 @@ export function claudeToOpenAIResponse(chunk, state) {
         const cacheCreationTokens = typeof startUsage.cache_creation_input_tokens === "number" ? startUsage.cache_creation_input_tokens : 0;
         const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
         state.usage = {
+          ...state.usage,
           prompt_tokens: promptTokens,
           completion_tokens: 0,
           total_tokens: promptTokens,
           input_tokens: inputTokens,
-          output_tokens: 0
+          output_tokens: 0,
+          // prompt_tokens already includes cache; cached_tokens marks it
+          // canonical so canonicalizeUsage does not fold cache in twice.
+          cached_tokens: cacheReadTokens
         };
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
@@ -130,11 +134,13 @@ export function claudeToOpenAIResponse(chunk, state) {
         const promptTokens = inputTokens + cacheReadTokens + cacheCreationTokens;
 
         state.usage = {
+          ...prev,
           prompt_tokens: promptTokens,
           completion_tokens: outputTokens,
           total_tokens: promptTokens + outputTokens,
           input_tokens: inputTokens,
-          output_tokens: outputTokens
+          output_tokens: outputTokens,
+          cached_tokens: cacheReadTokens
         };
 
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;

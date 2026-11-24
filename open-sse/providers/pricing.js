@@ -499,7 +499,10 @@ export function calculateCostFromTokens(tokens, pricing) {
   }
 
   if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
+    // cache_creation is the 5m write rate; Anthropic bills 1h writes at 2x input.
+    const cache1h = Math.min(tokens.cache_creation_1h_input_tokens || 0, cacheCreationTokens);
+    cost += (cacheCreationTokens - cache1h) * ((pricing.cache_creation || pricing.input) / 1000000);
+    cost += cache1h * (pricing.input * 2 / 1000000);
   }
 
   return cost;

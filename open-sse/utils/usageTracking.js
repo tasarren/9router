@@ -129,6 +129,8 @@ export function normalizeUsage(usage) {
   assignNumber("total_tokens", usage?.total_tokens);
   assignNumber("cache_read_input_tokens", usage?.cache_read_input_tokens);
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
+  // 1h-TTL subset of cache_creation_input_tokens (billed at 2x input, not 1.25x)
+  assignNumber("cache_creation_1h_input_tokens", usage?.cache_creation_1h_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
 
@@ -206,6 +208,8 @@ export function canonicalizeUsage(usage) {
     cache_creation_input_tokens: cacheCreation,
   };
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  const cache1h = num(usage.cache_creation_1h_input_tokens);
+  if (cache1h > 0) result.cache_creation_1h_input_tokens = cache1h;
   return result;
 }
 
@@ -248,7 +252,8 @@ export function extractUsage(chunk) {
       prompt_tokens: u.input_tokens || 0,
       completion_tokens: u.output_tokens || 0,
       cache_read_input_tokens: u.cache_read_input_tokens,
-      cache_creation_input_tokens: u.cache_creation_input_tokens
+      cache_creation_input_tokens: u.cache_creation_input_tokens,
+      cache_creation_1h_input_tokens: u.cache_creation?.ephemeral_1h_input_tokens
     });
   }
 
