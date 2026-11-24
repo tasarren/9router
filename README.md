@@ -1564,3 +1564,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 <div align="center">
   <sub>Built with ❤️ for developers who code 24/7</sub>
 </div>
+
+## Support
+
+This fork is maintained by [@tasarren](https://github.com/tasarren). Tip on [Ko-fi](https://ko-fi.com/tasarren) or sponsor on [GitHub](https://github.com/sponsors/tasarren).
