@@ -18,6 +18,21 @@ function githubMonthlyResetMs(status, errorText, provider) {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
 
+// Per-connection routing rules (providerSpecificData), set in the Edit Connection modal:
+// - routingDisabled: quota tracking only, never serves a request.
+// - blockedModels: model ids this account never serves; `*` matches any run of characters.
+export function routesModel(connection, ...models) {
+  const psd = connection?.providerSpecificData;
+  if (psd?.routingDisabled === true) return false;
+  const blocked = Array.isArray(psd?.blockedModels) ? psd.blockedModels : [];
+  if (!blocked.length) return true;
+  const ids = models.filter(Boolean).map((m) => String(m).replace(/\[[^\]]*\]$/, "").toLowerCase());
+  return !blocked.some((pattern) => {
+    const re = new RegExp(`^${String(pattern).trim().toLowerCase().split("*").map((p) => p.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+    return ids.some((id) => re.test(id));
+  });
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -87,6 +102,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (!routesModel(c, model, requestedModel)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
       // Antigravity: skip if live quota exhausted for this model

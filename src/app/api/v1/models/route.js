@@ -373,7 +373,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   let connections = [];
   try {
     connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
+    connections = connections.filter(c => c.isActive !== false && c.providerSpecificData?.routingDisabled !== true);
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }

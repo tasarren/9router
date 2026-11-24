@@ -16,6 +16,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     name: "",
     priority: 1,
     apiKey: "",
+    routingDisabled: false,
+    blockedModels: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -39,6 +41,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        routingDisabled: connection.providerSpecificData?.routingDisabled === true,
+        blockedModels: (connection.providerSpecificData?.blockedModels || []).join(", "),
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -201,6 +205,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         updates.providerSpecificData = buildRegionSpecificData();
       }
       
+      // Routing rules merge into providerSpecificData (the API merges with stored fields).
+      updates.providerSpecificData = {
+        ...(updates.providerSpecificData || {}),
+        routingDisabled: formData.routingDisabled,
+        blockedModels: formData.blockedModels.split(/[\s,]+/).filter(Boolean),
+      };
+
       await onSave(updates);
     } finally {
       setSaving(false);
@@ -230,6 +241,30 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={formData.routingDisabled}
+            onChange={(e) => setFormData({ ...formData, routingDisabled: e.target.checked })}
+          />
+          <span>
+            Quota tracking only
+            <span className="block text-xs text-text-muted">
+              Never route requests to this account. Usage limits and the model catalog still refresh.
+            </span>
+          </span>
+        </label>
+        {!formData.routingDisabled && (
+          <Input
+            label="Blocked models"
+            value={formData.blockedModels}
+            onChange={(e) => setFormData({ ...formData, blockedModels: e.target.value })}
+            placeholder="claude-fable-*, claude-opus-5-5"
+            hint="Model ids this account never serves, comma-separated. * matches any text. Other accounts of this provider still serve them."
+          />
+        )}
 
         {!isOAuth && (
           <>

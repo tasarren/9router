@@ -310,6 +310,7 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
       // reactive ping left off.
       const targets = conns.filter((conn) => (
         conn.authType === "oauth"
+        && conn.providerSpecificData?.routingDisabled !== true // quota-only accounts get no calls
         && (enabledMap[conn.id] === true || normalizePingSchedule(scheduleMap[conn.id]) !== null)
       ));
       for (const conn of targets) {

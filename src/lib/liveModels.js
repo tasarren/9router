@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials, checkAndRefreshToken } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -112,6 +113,22 @@ const parseNanModels = (data) => {
     name: known.get(id)?.name || id,
     ...(known.get(id)?.kind && { kind: known.get(id).kind }),
   }));
+};
+
+// Antigravity returns { models: { "<id>": { displayName, maxTokens, maxOutputTokens, isInternal } } }.
+// Known ids keep their registry upstreamModelId (thinking-tier suffix).
+// ponytail: registry-only aliases (e.g. gemini-4-carbon -> medium tier) drop out of the stored list.
+const parseAntigravityModels = (data) => {
+  const known = new Map(getModelsByProviderId("antigravity").map((m) => [m.id, m]));
+  return Object.entries(data?.models || {})
+    .filter(([id, info]) => !info?.isInternal && !id.includes("-disabled") && !id.startsWith("tab_"))
+    .map(([id, info]) => ({
+      id,
+      name: info?.displayName || known.get(id)?.name || id,
+      ...(known.get(id)?.upstreamModelId && { upstreamModelId: known.get(id).upstreamModelId }),
+      ...(info?.maxTokens > 0 && { contextWindow: info.maxTokens }),
+      ...(info?.maxOutputTokens > 0 && { maxOutput: info.maxOutputTokens }),
+    }));
 };
 
 // OpenCode Go lists each model's endpoints under `api`; unsupported ones (generate-content) are dropped.
@@ -286,13 +303,19 @@ const PROVIDER_MODELS_CONFIG = {
     })
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
+    // Per-account catalog; needs the IDE fingerprint headers or Google answers 403.
+    url: `${ANTIGRAVITY_IDE_BASE_URL}/v1internal:fetchAvailableModels`,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+      "X-Client-Name": "antigravity",
+      "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+    },
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     body: {},
-    parseResponse: (data) => data.models || []
+    parseResponse: parseAntigravityModels
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -624,7 +647,7 @@ const reply = (body, init) => ({ body, status: init?.status ?? 200 });
  * Fetch a connection's model list from its provider. Returns { status, body }.
  * Successful lists are persisted (live-models.json) for /v1/models and limits.
  */
-export { parseNanModels, parseOpenCodeGoModels }; // for tests
+export { parseAntigravityModels, parseNanModels, parseOpenCodeGoModels }; // for tests
 
 export async function fetchConnectionModels(connection) {
   try {
@@ -781,7 +804,7 @@ export async function fetchConnectionModels(connection) {
 }
 
 // Providers whose persisted live list replaces the static one in /v1/models.
-export const PERSISTED_CATALOG_PROVIDERS = ["claude", "codex", "nan", "opencode-go"];
+export const PERSISTED_CATALOG_PROVIDERS = ["claude", "codex", "nan", "opencode-go", "antigravity"];
 
 // Fill live-models.json: first active connection per provider.
 // A failed fetch keeps the last stored list; the next run or "Refresh catalog" retries.
